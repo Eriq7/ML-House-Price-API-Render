@@ -21,16 +21,17 @@ sys.modules["__main__"].add_top_features = add_top_features
 sys.modules["__main__"].apply_ordinal_maps = apply_ordinal_maps
 sys.modules["__main__"].select_notwinsor_numcol = select_notwinsor_numcol
 
-
 import house_price_api.hp_components
+
+# === NEW: 前端需要的响应类型（HTML）
+from fastapi.responses import HTMLResponse  # === NEW
+
 # ==== 基础路径定义 ====
 BASE_DIR     = Path(__file__).resolve().parents[1]
 MODEL_PATH   = BASE_DIR / "model" / "house_price_xgb_pipe.pkl"
 FEATURE_PATH = BASE_DIR / "model" / "feature_names_in.json"   # 可选存在
 
-
 app = FastAPI(title="House Price Prediction API")
-
 
 # ==== 自动识别训练列 ====
 def _infer_expected_cols(model):
@@ -74,7 +75,6 @@ def _infer_expected_cols(model):
     print("⚠️ Could not infer expected columns (no feature_names_in_ and no JSON).")
     return None
 
-
 # ==== 启动时加载模型 ====
 @app.on_event("startup")
 def _load_model():
@@ -82,12 +82,84 @@ def _load_model():
     MODEL = joblib.load(MODEL_PATH)
     EXPECTED_COLS = _infer_expected_cols(MODEL)
 
+# === NEW: 健康检查（供 Render 探活）
+@app.get("/healthz")
+def healthz():  # === NEW
+    return {"status": "ok", "build": "v4-clean-retrained"}  # === NEW
 
-# ==== 根路径健康检测 ====
-@app.get("/")
-def home():
-    return {"status": "running", "build": "v4-clean-retrained"}
+# === NEW: 根路径提供一个极简前端（HTML），用于粘贴 JSON 并调用 /predict
+@app.get("/", include_in_schema=False, response_class=HTMLResponse)  # === NEW
+def home():  # === NEW
+    # 前端不强依赖具体特征；用户可直接粘贴 JSON 调用 /predict
+    # 你也可以把下面的 placeholder JSON 替换成你实际的最小样例
+    placeholder = {
+        "GrLivArea": 1710,
+        "OverallQual": 7
+        # ... 其余特征按需添加；也可以只粘贴你当前要测试的字段
+    }
+    return f"""  <!-- === NEW: 简易前端 HTML 开始 === -->
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>House Price Prediction API</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 24px; max-width: 900px; margin: auto; }}
+    h1 {{ margin-bottom: 8px; }}
+    textarea {{ width: 100%; height: 220px; font-family: ui-monospace, Menlo, Consolas, monospace; }}
+    button {{ padding: 8px 14px; cursor: pointer; }}
+    .row {{ display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }}
+    .card {{ border: 1px solid #ddd; border-radius: 8px; padding: 12px; }}
+    pre {{ white-space: pre-wrap; word-break: break-word; background: #111; color: #eee; padding: 12px; border-radius: 8px; }}
+    .muted {{ color: #666; }}
+  </style>
+</head>
+<body>
+  <h1>House Price Prediction API</h1>
+  <p class="muted">Status: running • Build: v4-clean-retrained • Try the interactive docs at <a href="/docs">/docs</a></p>
 
+  <div class="card">
+    <h3>1) Paste JSON payload for <code>/predict</code></h3>
+    <textarea id="payload">{json.dumps(placeholder, indent=2)}</textarea>
+    <div class="row">
+      <button onclick="doPredict()">Send to /predict</button>
+      <span class="muted">Content-Type: application/json</span>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:16px;">
+    <h3>2) Response</h3>
+    <pre id="out">—</pre>
+  </div>
+
+  <script>
+    async function doPredict() {{
+      const out = document.getElementById('out');
+      out.textContent = 'Requesting...';
+      let body;
+      try {{
+        body = JSON.parse(document.getElementById('payload').value);
+      }} catch (e) {{
+        out.textContent = '❌ Invalid JSON: ' + e.message;
+        return;
+      }}
+      try {{
+        const r = await fetch('/predict', {{
+          method: 'POST',
+          headers: {{ 'Content-Type': 'application/json' }},
+          body: JSON.stringify(body)
+        }});
+        const text = await r.text();
+        out.textContent = text;
+      }} catch (e) {{
+        out.textContent = '❌ Request failed: ' + e.message;
+      }}
+    }}
+  </script>
+</body>
+</html>
+"""  # === NEW: 简易前端 HTML 结束 ===
 
 # ==== 预测接口 ====
 @app.post("/predict")
