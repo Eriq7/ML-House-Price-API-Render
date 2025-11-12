@@ -95,7 +95,7 @@ CMD ["bash", "-c", "uvicorn house_price_api.app.main:app --host 0.0.0.0 --port $
 ---
 
 ## 🚀 How to Use
-
+plz copy below code and paste to your computer's terminal, after run all documents will download to your computer
 **Clone the repository:**
 ```bash
 git clone https://github.com/Eriq7/ML-House-Price-API-Render.git
